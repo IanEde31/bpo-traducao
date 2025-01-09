@@ -14,11 +14,11 @@ export function Sidebar() {
   const location = useLocation();
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 min-h-screen p-4">
+    <div className="w-64 bg-white min-h-screen p-4 shadow-lg">
       <div className="mb-8">
         <img src="/lovable-uploads/3ea239ae-8609-4d4c-85d5-8e2fb8198968.png" alt="BPO Logo" className="h-8" />
         <div className="mt-4">
-          <h2 className="text-sm font-medium">Olá, cliente!</h2>
+          <h2 className="text-sm font-medium text-primary-600">Olá, cliente!</h2>
           <p className="text-xs text-gray-500">Bem-vindo à sua conta!</p>
         </div>
       </div>
