@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FileText, FileCheck } from "lucide-react";
+import { Calendar, FileCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Index = () => {
@@ -12,32 +12,34 @@ const Index = () => {
           <p className="text-gray-500 mt-1">Solicite sua tradução com apenas alguns cliques</p>
         </div>
         <Link to="/novo-orcamento">
-          <Button className="bg-primary hover:bg-primary-500">Faça um pedido</Button>
+          <Button className="bg-[#23B0DE] hover:bg-[#198BAC] text-white rounded-full">
+            Faça um pedido
+          </Button>
         </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="p-6">
+        <Card className="p-6 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center space-x-4">
-            <div className="p-3 bg-secondary rounded-lg">
-              <FileText className="h-6 w-6 text-primary" />
+            <div className="p-3 bg-[#FFF5E6] rounded-lg">
+              <Calendar className="h-6 w-6 text-[#F97316]" />
             </div>
             <div>
-              <h3 className="font-medium text-gray-600">Aguardando</h3>
-              <p className="text-3xl font-bold text-primary-600">0</p>
-              <p className="text-sm text-gray-500">Novos pedidos</p>
+              <h3 className="font-medium text-gray-600">Andamento</h3>
+              <p className="text-3xl font-bold text-[#F97316]">0</p>
+              <p className="text-sm text-gray-500">Meus pedidos</p>
             </div>
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-6 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center space-x-4">
-            <div className="p-3 bg-secondary rounded-lg">
-              <FileCheck className="h-6 w-6 text-primary" />
+            <div className="p-3 bg-[#E8F5E9] rounded-lg">
+              <FileCheck className="h-6 w-6 text-[#4CAF50]" />
             </div>
             <div>
               <h3 className="font-medium text-gray-600">Concluídos</h3>
-              <p className="text-3xl font-bold text-primary-600">0</p>
+              <p className="text-3xl font-bold text-[#4CAF50]">0</p>
               <p className="text-sm text-gray-500">Meus pedidos</p>
             </div>
           </div>

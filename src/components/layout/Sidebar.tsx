@@ -1,9 +1,9 @@
-import { Home, FileText, FileCheck, User, HelpCircle, Plus } from "lucide-react";
+import { Home, FilePlus, FileText, FileCheck, User, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const menuItems = [
   { icon: Home, label: "Home", path: "/" },
-  { icon: Plus, label: "Novo orçamento", path: "/novo-orcamento" },
+  { icon: FilePlus, label: "Novo orçamento", path: "/novo-orcamento" },
   { icon: FileText, label: "Meus orçamentos", path: "/meus-orcamentos" },
   { icon: FileCheck, label: "Meus pedidos", path: "/meus-pedidos" },
   { icon: User, label: "Cadastro", path: "/cadastro" },
@@ -18,7 +18,7 @@ export function Sidebar() {
       <div className="mb-8">
         <img src="/lovable-uploads/3ea239ae-8609-4d4c-85d5-8e2fb8198968.png" alt="BPO Logo" className="h-8" />
         <div className="mt-4">
-          <h2 className="text-sm font-medium text-primary-600">Olá, cliente!</h2>
+          <h2 className="text-sm font-medium text-[#23B0DE]">Olá, cliente!</h2>
           <p className="text-xs text-gray-500">Bem-vindo à sua conta!</p>
         </div>
       </div>
@@ -31,7 +31,7 @@ export function Sidebar() {
               to={item.path}
               className={`flex items-center px-4 py-3 text-sm rounded-lg transition-colors ${
                 isActive
-                  ? "bg-secondary text-primary font-medium"
+                  ? "bg-[#E2F3FE] text-[#23B0DE] font-medium"
                   : "text-gray-600 hover:bg-gray-50"
               }`}
             >
