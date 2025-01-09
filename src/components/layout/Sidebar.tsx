@@ -35,7 +35,7 @@ export function Sidebar() {
                   : "text-gray-600 hover:bg-gray-50"
               }`}
             >
-              <item.icon className="h-5 w-5 mr-3" />
+              <item.icon className={`h-5 w-5 mr-3 ${isActive ? "text-[#23B0DE]" : ""}`} />
               {item.label}
             </Link>
           );
