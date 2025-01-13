@@ -12,6 +12,8 @@ import MyQuotes from "./pages/MyQuotes";
 import MyOrders from "./pages/MyOrders";
 import Profile from "./pages/Profile";
 import Help from "./pages/Help";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 
 const queryClient = new QueryClient();
 
@@ -21,16 +23,18 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Layout>
-          <Routes>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/cadastro" element={<Register />} />
+          <Route element={<Layout />}>
             <Route path="/" element={<Home />} />
             <Route path="/novo-orcamento" element={<NewQuote />} />
             <Route path="/meus-orcamentos" element={<MyQuotes />} />
             <Route path="/meus-pedidos" element={<MyOrders />} />
-            <Route path="/cadastro" element={<Profile />} />
+            <Route path="/perfil" element={<Profile />} />
             <Route path="/ajuda" element={<Help />} />
-          </Routes>
-        </Layout>
+          </Route>
+        </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
