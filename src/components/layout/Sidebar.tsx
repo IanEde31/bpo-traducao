@@ -1,4 +1,4 @@
-import { Home, FilePlus, FileText, FileCheck, User, HelpCircle, MessageSquare } from "lucide-react";
+import { Home, FileText, FileCheck, User, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/use-toast";
@@ -6,7 +6,7 @@ import { useState } from "react";
 
 const clientMenuItems = [
   { icon: Home, label: "Home", path: "/" },
-  { icon: FilePlus, label: "Novo orçamento", path: "/novo-orcamento" },
+  { icon: FileText, label: "Novo orçamento", path: "/novo-orcamento" },
   { icon: FileText, label: "Meus orçamentos", path: "/meus-orcamentos" },
   { icon: FileCheck, label: "Meus pedidos", path: "/meus-pedidos" },
   { icon: User, label: "Cadastro", path: "/cadastro" },
@@ -15,10 +15,9 @@ const clientMenuItems = [
 
 const translatorMenuItems = [
   { icon: Home, label: "Home", path: "/" },
-  { icon: MessageSquare, label: "Mensagens", path: "/mensagens" },
-  { icon: FileText, label: "Orçamentos", path: "/orcamentos" },
-  { icon: FileCheck, label: "Pedidos", path: "/pedidos" },
-  { icon: User, label: "Perfil", path: "/perfil" },
+  { icon: FileText, label: "Meus orçamentos", path: "/meus-orcamentos" },
+  { icon: FileCheck, label: "Minhas traduções", path: "/minhas-traducoes" },
+  { icon: User, label: "Cadastro", path: "/cadastro" },
   { icon: HelpCircle, label: "Ajuda", path: "/ajuda" },
 ];
 

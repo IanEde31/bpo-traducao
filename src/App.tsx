@@ -31,6 +31,7 @@ const App = () => (
             <Route path="/novo-orcamento" element={<NewQuote />} />
             <Route path="/meus-orcamentos" element={<MyQuotes />} />
             <Route path="/meus-pedidos" element={<MyOrders />} />
+            <Route path="/minhas-traducoes" element={<MyOrders />} />
             <Route path="/perfil" element={<Profile />} />
             <Route path="/ajuda" element={<Help />} />
           </Route>
