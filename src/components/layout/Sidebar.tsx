@@ -1,8 +1,9 @@
 import { Home, FileText, FileCheck, User, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/components/ui/use-toast";
-import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { useContext } from "react";
+import { UserTypeContext } from "@/App";
 
 const clientMenuItems = [
   { icon: Home, label: "Home", path: "/" },
@@ -24,7 +25,7 @@ const translatorMenuItems = [
 export function Sidebar() {
   const location = useLocation();
   const { toast } = useToast();
-  const [isTranslator, setIsTranslator] = useState(false);
+  const { isTranslator, setIsTranslator } = useContext(UserTypeContext);
 
   const handleModeChange = (checked: boolean) => {
     setIsTranslator(checked);
