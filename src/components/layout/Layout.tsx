@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { AppDock } from "./AppDock";
 import { Outlet } from "react-router-dom";
 
 export function Layout() {
@@ -11,6 +12,7 @@ export function Layout() {
         <main className="p-6">
           <Outlet />
         </main>
+        <AppDock />
       </div>
     </div>
   );
