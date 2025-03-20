@@ -8,6 +8,16 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      '/api/deepl': {
+        target: 'https://api.deepl.com/v2',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/deepl/, ''),
+        headers: {
+          'Authorization': `DeepL-Auth-Key ${process.env.DEEPL_AUTH_KEY || ''}`
+        }
+      }
+    }
   },
   plugins: [
     react(),

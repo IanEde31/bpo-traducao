@@ -1,74 +1,116 @@
-import { Home, FileText, FileCheck, User, HelpCircle } from "lucide-react";
+import { Home, FileText, FileCheck, User, HelpCircle, X, Users, Settings, LayoutDashboard, ShoppingCart } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { useContext } from "react";
-import { UserTypeContext } from "@/App";
+import { Logo } from "@/components/Logo";
+
+interface SidebarProps {
+  isMobile?: boolean;
+  onClose?: () => void;
+}
 
 const clientMenuItems = [
-  { icon: Home, label: "Home", path: "/" },
-  { icon: FileText, label: "Novo orçamento", path: "/novo-orcamento" },
-  { icon: FileText, label: "Meus orçamentos", path: "/meus-orcamentos" },
-  { icon: FileCheck, label: "Meus pedidos", path: "/meus-pedidos" },
-  { icon: User, label: "Cadastro", path: "/cadastro" },
+  { icon: Home, label: "Início", path: "/" },
+  { icon: FileText, label: "Novo Orçamento", path: "/novo-orcamento" },
+  { icon: FileText, label: "Meus Orçamentos", path: "/meus-orcamentos" },
+  { icon: FileCheck, label: "Meus Pedidos", path: "/meus-pedidos" },
+  { icon: User, label: "Perfil", path: "/perfil" },
   { icon: HelpCircle, label: "Ajuda", path: "/ajuda" },
 ];
 
 const translatorMenuItems = [
-  { icon: Home, label: "Home", path: "/" },
-  { icon: FileText, label: "Meus orçamentos", path: "/meus-orcamentos" },
-  { icon: FileCheck, label: "Minhas traduções", path: "/minhas-traducoes" },
-  { icon: User, label: "Cadastro", path: "/cadastro" },
-  { icon: HelpCircle, label: "Ajuda", path: "/ajuda" },
+  { icon: Home, label: "Início", path: "/translator" },
+  { icon: FileText, label: "Pedidos Disponíveis", path: "/translator/pedidos-disponiveis" },
+  { icon: FileCheck, label: "Minhas Traduções", path: "/translator/minhas-traducoes" },
+  { icon: FileCheck, label: "Histórico", path: "/translator/historico" },
+  { icon: User, label: "Perfil", path: "/translator/perfil" },
+  { icon: HelpCircle, label: "Ajuda", path: "/translator/ajuda" },
 ];
 
-export function Sidebar() {
+const adminMenuItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
+  { icon: Users, label: "Gestão de Usuários", path: "/admin/usuarios" },
+  { icon: ShoppingCart, label: "Gestão de Pedidos", path: "/admin/pedidos" },
+  { icon: Users, label: "Gerenciar Tradutores", path: "/admin/tradutores" },
+  { icon: Settings, label: "Ferramentas Admin", path: "/admin/ferramentas" },
+];
+
+export function Sidebar({ isMobile, onClose }: SidebarProps) {
   const location = useLocation();
   const { toast } = useToast();
-  const { isTranslator, setIsTranslator } = useContext(UserTypeContext);
 
-  const handleModeChange = (checked: boolean) => {
-    setIsTranslator(checked);
-    toast({
-      title: `Modo ${checked ? "Tradutor" : "Cliente"} ativado`,
-      description: "A interface foi atualizada",
-    });
+  // Verificar qual tipo de rota está sendo acessada
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isTranslatorRoute = location.pathname.startsWith('/translator');
+
+  const handleLinkClick = () => {
+    if (isMobile && onClose) {
+      onClose();
+    }
   };
 
-  const menuItems = isTranslator ? translatorMenuItems : clientMenuItems;
+  // Selecionar os itens de menu apropriados com base na rota atual
+  let menuItems = clientMenuItems;  // Padrão: menu de cliente
+  
+  if (isAdminRoute) {
+    menuItems = adminMenuItems;
+  } else if (isTranslatorRoute) {
+    menuItems = translatorMenuItems;
+  }
 
   return (
-    <div className="w-64 bg-white min-h-screen p-4 shadow-lg">
+    <div className={`w-64 bg-white ${isMobile ? 'h-full' : 'min-h-screen'} p-4 shadow-lg`}>
       <div className="mb-8">
-        <img src="/lovable-uploads/84531977-88a3-4c95-8ec9-d55c5c49b595.png" alt="BPO Logo" className="h-8" />
-        <div className="mt-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-medium text-[#23B0DE]">
-              Olá, {isTranslator ? "tradutor" : "cliente"}!
-            </h2>
-            <p className="text-xs text-gray-500">Bem-vindo à sua conta!</p>
-          </div>
-          <Switch
-            checked={isTranslator}
-            onCheckedChange={handleModeChange}
-            className="ml-2"
-          />
+        <div className="flex items-center justify-between">
+          <Logo className="h-8 w-auto" />
+          {isMobile && (
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg text-gray-500"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+        <div className="mt-4">
+          {isAdminRoute ? (
+            <div>
+              <h2 className="text-sm font-medium text-red-600">Modo Administrador</h2>
+              <p className="text-xs text-gray-500">Gerenciamento do sistema</p>
+            </div>
+          ) : (
+            <div>
+              <h2 className="text-sm font-medium text-[#23B0DE]">
+                Olá, {isTranslatorRoute ? "tradutor" : "cliente"}!
+              </h2>
+              <p className="text-xs text-gray-500">Bem-vindo à sua conta!</p>
+            </div>
+          )}
         </div>
       </div>
+
       <nav className="space-y-1">
-        {menuItems.map((item) => {
+        {menuItems.map((item, index) => {
           const isActive = location.pathname === item.path;
           return (
             <Link
-              key={item.path}
+              key={index}
               to={item.path}
-              className={`flex items-center px-4 py-3 text-sm rounded-lg transition-colors ${
+              onClick={handleLinkClick}
+              className={`flex items-center px-3 py-2 text-sm rounded-lg transition-colors ${
                 isActive
-                  ? "bg-[#E2F3FE] text-[#23B0DE] font-medium"
-                  : "text-gray-600 hover:bg-gray-50"
+                  ? isAdminRoute 
+                    ? "bg-red-50 text-red-600" 
+                    : "bg-[#F0F7FF] text-[#23B0DE]"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              <item.icon className={`h-5 w-5 mr-3 ${isActive ? "text-[#23B0DE]" : ""}`} />
+              <item.icon className={`mr-3 h-5 w-5 ${
+                isActive 
+                  ? isAdminRoute 
+                    ? "text-red-600" 
+                    : "text-[#23B0DE]" 
+                  : "text-gray-400"
+              }`} />
               {item.label}
             </Link>
           );
