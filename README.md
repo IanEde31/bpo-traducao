@@ -1,69 +1,143 @@
-# Welcome to your Lovable project
+# BPO Tradução - Plataforma de Serviços de Tradução
 
-## Project info
+![Status do Projeto](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow)
+![Versão](https://img.shields.io/badge/Versão-2.0-blue)
+![Licença](https://img.shields.io/badge/Licença-MIT-green)
 
-**URL**: https://lovable.dev/projects/10dbcab5-369f-413c-9900-2377008ddd65
+## 📝 Sobre o Projeto
 
-## How can I edit this code?
+A Plataforma BPO Tradução é um sistema completo para gerenciamento de serviços de tradução, conectando clientes que precisam de traduções com tradutores qualificados. A plataforma gerencia todo o ciclo de vida do processo de tradução, desde o orçamento inicial até a entrega final do documento traduzido.
 
-There are several ways of editing your application.
+### Principais Recursos
 
-**Use Lovable**
+- ✅ Sistema de orçamento instantâneo baseado no tipo de documento e contagem de palavras
+- ✅ Upload e gerenciamento de documentos em múltiplos formatos (PDF, DOCX, etc.)
+- ✅ Integração com a API DeepL para auxílio à tradução automática
+- ✅ Painel dedicado para tradutores com visualização de pedidos disponíveis
+- ✅ Área administrativa para gerenciamento de usuários e monitoramento de processos
+- ✅ Sistema seguro de autenticação e controle de acesso baseado em papéis (RBAC)
+- ✅ Suporte para traduções técnicas, juramentadas e certificadas
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/10dbcab5-369f-413c-9900-2377008ddd65) and start prompting.
+## 🚀 Tecnologias Utilizadas
 
-Changes made via Lovable will be committed automatically to this repo.
+### Frontend
+- **React 18** com TypeScript
+- **Vite** como bundler e ferramenta de desenvolvimento
+- **Tailwind CSS** para estilização
+- **shadcn/ui** para componentes de UI
+- **React Router DOM** para navegação
+- **React Hook Form** com Zod para validação de formulários
+- **Framer Motion** para animações
+- **React PDF** e **Mammoth.js** para visualização e manipulação de documentos
 
-**Use your preferred IDE**
+### Backend e Infraestrutura
+- **Supabase** para banco de dados PostgreSQL, autenticação e storage
+- **Express.js** com Node.js para serviços de API
+- **API DeepL** para serviços de tradução automática
+- **Axios** para requisições HTTP
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🧩 Arquitetura do Sistema
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+A plataforma é dividida em três módulos principais:
 
-Follow these steps:
+1. **Módulo Cliente**: Interface para usuários solicitarem orçamentos, enviarem documentos e acompanharem o status de suas traduções.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. **Módulo Tradutor**: Interface para tradutores visualizarem pedidos disponíveis, aceitarem trabalhos, utilizarem ferramentas de tradução assistida e entregarem documentos finalizados.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+3. **Módulo Administrativo**: Painel para administradores gerenciarem usuários, monitorarem pedidos e manterem a qualidade do serviço.
 
-# Step 3: Install the necessary dependencies.
-npm i
+## 🔧 Configuração e Instalação
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+### Pré-requisitos
+- Node.js 18 ou superior
+- NPM ou Yarn
+- Conta no Supabase
+- Chave de API do DeepL
+
+### Instalação
+
+1. Clone o repositório
+```bash
+git clone https://github.com/IanEde31/bpo-traducao.git
+cd bpo-traducao
+```
+
+2. Instale as dependências
+```bash
+npm install
+```
+
+3. Configure as variáveis de ambiente
+```bash
+cp .env.example .env
+```
+Edite o arquivo `.env` com suas credenciais do Supabase e DeepL.
+
+4. Inicie o servidor de desenvolvimento
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+5. Para o servidor proxy DeepL (em um terminal separado)
+```bash
+cd api
+npm install
+node deepl-proxy.js
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 📋 Funcionalidades Detalhadas
 
-**Use GitHub Codespaces**
+### Para Clientes
+- Cadastro e login seguros
+- Solicitação de orçamentos com upload de arquivos
+- Visualização de histórico de pedidos
+- Acompanhamento do status de traduções em andamento
+- Download de documentos traduzidos
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Para Tradutores
+- Visualização de trabalhos disponíveis
+- Interface de tradução com ferramentas de auxílio
+- Integração com DeepL para sugestões de tradução
+- Histórico de trabalhos realizados
+- Perfil com estatísticas de produtividade
 
-## What technologies are used for this project?
+### Para Administradores
+- Gestão completa de usuários
+- Ativação/desativação de tradutores
+- Monitoramento de pedidos e status
+- Dashboard com métricas e análises
+- Ferramentas de promoção e marketing
 
-This project is built with .
+## 🔐 Segurança
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+A plataforma implementa diversas medidas de segurança:
 
-## How can I deploy this project?
+- Autenticação segura via Supabase com JWT
+- Row Level Security (RLS) para controle de acesso a dados
+- Sistema de permissões baseado em papéis de usuário
+- Armazenamento seguro de documentos com acesso controlado
+- Proxy seguro para comunicação com APIs externas
 
-Simply open [Lovable](https://lovable.dev/projects/10dbcab5-369f-413c-9900-2377008ddd65) and click on Share -> Publish.
+## 🌐 Implantação
 
-## I want to use a custom domain - is that possible?
+A aplicação está configurada para deploy em plataformas como Vercel ou Netlify, com configurações específicas para garantir o correto funcionamento das rotas e da integração com APIs.
 
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
+## 📈 Roadmap
+
+- [ ] Implementação de sistema de pagamentos integrado
+- [ ] Suporte para mais idiomas e tipos de tradução
+- [ ] Aplicativo móvel para acompanhamento de traduções
+- [ ] Sistema de verificação e certificação avançado
+- [ ] Análise de sentimento e contexto para traduções mais precisas
+
+## 👥 Contribuição
+
+Contribuições são bem-vindas! Por favor, leia nossas diretrizes de contribuição antes de submeter pull requests.
+
+## 📄 Licença
+
+Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE para detalhes.
+
+---
+
+Desenvolvido com ❤️ por Ian Ede | BPO Tradução © 2025
