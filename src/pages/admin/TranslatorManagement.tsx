@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,6 +21,21 @@ interface Translator {
   created_at: string;
 }
 
+// Define the interface for the data returned by Supabase
+interface TranslatorData {
+  translator_id: string;
+  user_id: string;
+  languages: string[] | string | null;
+  certifications: string | null;
+  rating: number | null;
+  users: {
+    name: string;
+    email: string;
+    role: string;
+    created_at: string;
+  };
+}
+
 export default function TranslatorManagement() {
   const [translators, setTranslators] = useState<Translator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,21 +48,6 @@ export default function TranslatorManagement() {
   async function fetchTranslators() {
     try {
       setIsLoading(true);
-      
-      // Definir a interface para os dados retornados pelo Supabase
-      interface TranslatorData {
-        translator_id: string;
-        user_id: string;
-        languages: string[] | string | null;
-        certifications: string | null;
-        rating: number | null;
-        users: {
-          name: string;
-          email: string;
-          role: string;
-          created_at: string;
-        };
-      }
       
       // Buscar usuários com a função 'tradutor' unindo as tabelas users e translators
       const { data, error } = await supabase
@@ -70,7 +71,8 @@ export default function TranslatorManagement() {
       
       // Transformar os dados para o formato que precisamos
       if (data) {
-        const formattedTranslators = (data as TranslatorData[]).map(item => ({
+        // Type assertion to assure TypeScript that data matches the structure we expect
+        const formattedTranslators = (data as unknown as TranslatorData[]).map(item => ({
           translator_id: item.translator_id,
           user_id: item.user_id,
           name: item.users.name,
