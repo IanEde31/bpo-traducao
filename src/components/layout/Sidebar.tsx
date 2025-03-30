@@ -27,11 +27,12 @@ const translatorMenuItems = [
 ];
 
 const adminMenuItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
-  { icon: Users, label: "Gestão de Usuários", path: "/admin/usuarios" },
-  { icon: ShoppingCart, label: "Gestão de Pedidos", path: "/admin/pedidos" },
+  // Itens temporariamente desativados para atualização de desenvolvimento
+  // { icon: LayoutDashboard, label: "Dashboard", path: "/admin/dashboard" },
+  // { icon: Users, label: "Gestão de Usuários", path: "/admin/usuarios" },
+  // { icon: ShoppingCart, label: "Gestão de Pedidos", path: "/admin/pedidos" },
   { icon: Users, label: "Gerenciar Tradutores", path: "/admin/tradutores" },
-  { icon: Settings, label: "Ferramentas Admin", path: "/admin/ferramentas" },
+  // { icon: Settings, label: "Ferramentas Admin", path: "/admin/ferramentas" },
 ];
 
 export function Sidebar({ isMobile, onClose }: SidebarProps) {

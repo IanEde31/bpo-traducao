@@ -2,9 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { format, addBusinessDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+} from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Select,
@@ -28,8 +35,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { CalendarIcon, Eye, Loader2, Upload } from "lucide-react";
+import { CalendarIcon, Eye, Loader2, Upload, X } from "lucide-react";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -43,6 +51,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CheckoutButton } from "@/components/stripe/CheckoutButton";
 
 // Configuração do worker do PDF.js
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -52,6 +61,11 @@ interface FileInfo {
   file: File;
   wordCount: number;
   isProcessing: boolean;
+}
+
+interface FilesInfo {
+  files: FileInfo[];
+  totalWordCount: number;
 }
 
 interface QuoteDetails {
@@ -67,11 +81,14 @@ const ACCEPTED_FILE_TYPES = {
   'application/pdf': ['.pdf'],
   'application/msword': ['.doc'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.ms-excel': ['.xls'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
   'text/plain': ['.txt'],
-  'application/vnd.ms-powerpoint': ['.ppt'],
 };
+
+// Tamanho máximo de arquivo (50MB)
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+// Tamanho máximo total de todos os arquivos (200MB)
+const MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
 const LANGUAGES = [
   'Português',
@@ -124,18 +141,101 @@ const formSchema = z.object({
   }
 );
 
+interface OrderData {
+  fileCount: number;
+  wordCount: number;
+  totalSize: number;
+  totalPrice: number;
+  requestId: string;
+}
+
 const NewQuote: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
-  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
+  const [filesInfo, setFilesInfo] = useState<FilesInfo>({
+    files: [],
+    totalWordCount: 0
+  });
   const [quoteDetails, setQuoteDetails] = useState<QuoteDetails | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [processingStatus, setProcessingStatus] = useState<{
+    total: number;
+    processed: number;
+    isProcessing: boolean;
+  }>({
+    total: 0,
+    processed: 0,
+    isProcessing: false
+  });
+  // Estado para controlar o modal de sucesso
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [submittedRequestId, setSubmittedRequestId] = useState<string | null>(null);
+  const [submittedOrderData, setSubmittedOrderData] = useState<OrderData | null>(null);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
   });
+
+  // Carregar dados do usuário
+  useEffect(() => {
+    async function loadUserData() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          console.log("Usuário autenticado:", user.id);
+          
+          // Tentar obter o email do usuário da autenticação
+          if (user.email) {
+            form.setValue('email', user.email);
+          }
+          
+          // Buscar detalhes do perfil do usuário do Supabase
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*') // Selecionar todas as colunas para verificar as disponíveis
+            .eq('id', user.id)
+            .single();
+          
+          if (error) {
+            console.log("Erro ao buscar perfil:", error);
+            // Se não conseguir buscar o perfil, pelo menos preencher com os dados básicos do auth
+            return;
+          }
+            
+          console.log("Dados do perfil:", data);
+          
+          if (data) {
+            // Verificar cada campo e preencher de acordo com o que estiver disponível
+            // Nome pode estar em diferentes campos dependendo da estrutura
+            const nameField = data.full_name || data.name || data.username || '';
+            if (nameField) form.setValue('name', nameField);
+            
+            // Email pode estar em diferentes campos
+            const emailField = data.email || user.email || '';
+            if (emailField) form.setValue('email', emailField);
+            
+            // Telefone pode estar em diferentes campos
+            const phoneField = data.phone || data.phone_number || '';
+            if (phoneField) {
+              // Formatar o número de telefone se necessário
+              const formattedPhone = formatPhoneNumber(phoneField);
+              form.setValue('phone', formattedPhone);
+            }
+          }
+        } else {
+          console.log("Usuário não autenticado");
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados do usuário:', error);
+      }
+    }
+    
+    loadUserData();
+  }, [form]);
 
   // Função para formatar número de telefone
   function formatPhoneNumber(value: string): string {
@@ -146,28 +246,117 @@ const NewQuote: React.FC = () => {
     return value;
   }
 
+  // Função para formatar tamanho de arquivo
+  const formatFileSize = (size: number): string => {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   // Função para processar o upload do arquivo
   async function handleFileDrop(acceptedFiles: File[]) {
     if (acceptedFiles.length === 0) return;
 
-    const file = acceptedFiles[0];
-    setFileInfo({
+    // Verificar o tamanho total dos arquivos
+    const totalFileSize = acceptedFiles.reduce((size, file) => size + file.size, 0);
+    const currentTotalSize = filesInfo.files.reduce((size, info) => size + info.file.size, 0);
+    
+    if (totalFileSize + currentTotalSize > MAX_TOTAL_SIZE) {
+      toast({
+        variant: "destructive",
+        title: "Tamanho total excedido",
+        description: `O tamanho total dos arquivos (${formatFileSize(totalFileSize + currentTotalSize)}) excede o limite de ${formatFileSize(MAX_TOTAL_SIZE)}.`,
+      });
+      return;
+    }
+
+    // Criar entradas temporárias para os novos arquivos
+    const newFiles = acceptedFiles.map(file => ({
       file,
       wordCount: 0,
       isProcessing: true,
+    }));
+
+    // Iniciar status de processamento
+    setProcessingStatus({
+      total: acceptedFiles.length,
+      processed: 0,
+      isProcessing: true
     });
 
+    // Adicionar aos arquivos existentes
+    setFilesInfo(prev => ({
+      files: [...prev.files, ...newFiles],
+      totalWordCount: prev.totalWordCount
+    }));
+
     try {
-      const wordCount = await calculateWordCount(file);
-      setFileInfo(prev => prev ? { ...prev, wordCount, isProcessing: false } : null);
-      calculateQuote(wordCount);
+      // Processar cada arquivo em paralelo
+      const processedFilesPromises = acceptedFiles.map(async (file, index) => {
+        const wordCount = await calculateWordCount(file);
+        
+        // Atualizar contador de processamento
+        setProcessingStatus(prev => ({
+          ...prev,
+          processed: prev.processed + 1
+        }));
+        
+        return {
+          file,
+          wordCount,
+          isProcessing: false
+        };
+      });
+
+      const processedFiles = await Promise.all(processedFilesPromises);
+
+      // Atualizar estado com os arquivos processados
+      setFilesInfo(prev => {
+        // Substituir os arquivos temporários pelos processados
+        const updatedFiles = [
+          ...prev.files.filter(f => !newFiles.some(nf => nf.file.name === f.file.name)),
+          ...processedFiles
+        ];
+        
+        // Calcular total de palavras
+        const totalWordCount = updatedFiles.reduce((sum, file) => sum + file.wordCount, 0);
+        
+        // Atualizar cotação
+        calculateQuote(totalWordCount);
+        
+        return {
+          files: updatedFiles,
+          totalWordCount
+        };
+      });
     } catch (error) {
-      console.error('Erro ao processar arquivo:', error);
-      setFileInfo(null);
+      console.error('Erro ao processar arquivos:', error);
+      
+      // Remover arquivos com erro
+      setFilesInfo(prev => {
+        const updatedFiles = prev.files.filter(f => 
+          !newFiles.some(nf => nf.file.name === f.file.name)
+        );
+        
+        const totalWordCount = updatedFiles.reduce((sum, file) => sum + file.wordCount, 0);
+        
+        return {
+          files: updatedFiles,
+          totalWordCount
+        };
+      });
+      
       toast({
         variant: "destructive",
-        title: "Erro ao processar arquivo",
-        description: error instanceof Error ? error.message : "Não foi possível processar o arquivo.",
+        title: "Erro ao processar arquivos",
+        description: error instanceof Error ? error.message : "Não foi possível processar os arquivos. Tente novamente.",
+      });
+    } finally {
+      // Finalizar status de processamento
+      setProcessingStatus({
+        total: 0,
+        processed: 0,
+        isProcessing: false
       });
     }
   }
@@ -197,6 +386,12 @@ const NewQuote: React.FC = () => {
       pricePerWord = PRICING[3].pricePerWord;
     }
 
+    // Atualizar também o estado de totalWordCount
+    setFilesInfo(prev => ({
+      ...prev,
+      totalWordCount: wordCount
+    }));
+
     setQuoteDetails({
       wordCount,
       pricePerWord,
@@ -209,7 +404,7 @@ const NewQuote: React.FC = () => {
   // Função para enviar o formulário
   const onSubmit = async (formData: z.infer<typeof formSchema>) => {
     try {
-      if (!fileInfo) {
+      if (!filesInfo.files.length) {
         toast({
           variant: "destructive",
           title: "Erro ao enviar cotação",
@@ -219,87 +414,207 @@ const NewQuote: React.FC = () => {
       }
 
       setIsSubmitting(true);
+      setUploadProgress({}); // Resetar progresso de upload
 
-      // Upload do arquivo
-      const originalFileName = fileInfo.file.name;
-      const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
-      const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
-      const fileExt = originalFileName.substring(originalFileName.lastIndexOf('.'));
-      const safeFileName = `${fileNameWithoutExt}_${timestamp}${fileExt}`.replace(/[^a-zA-Z0-9.-_]/g, '_');
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('arquivos_carregados')
-        .upload(safeFileName, fileInfo.file);
-
-      if (uploadError) {
-        throw new Error('Erro ao fazer upload do arquivo');
-      }
-
-      console.log('Upload concluído com sucesso:', uploadData);
-
-      // Criar solicitação
-      const requestId = uuidv4();
+      // Obter usuário autenticado
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
         throw new Error('Usuário não autenticado');
       }
 
-      const translationRequest = {
+      // Criar um ID de solicitação único para todos os arquivos
+      const requestId = uuidv4();
+
+      // Upload de todos os arquivos
+      const uploadedFiles = await Promise.all(
+        filesInfo.files.map(async (fileInfo) => {
+          const originalFileName = fileInfo.file.name;
+          const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+          const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.'));
+          const fileExt = originalFileName.substring(originalFileName.lastIndexOf('.'));
+          const safeFileName = `${fileNameWithoutExt}_${timestamp}${fileExt}`.replace(/[^a-zA-Z0-9.-_]/g, '_');
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('arquivos_carregados')
+            .upload(safeFileName, fileInfo.file, {
+              onProgress: (progress) => {
+                setUploadProgress(prev => ({ ...prev, [safeFileName]: progress.percentage }));
+              }
+            });
+
+          if (uploadError) {
+            throw new Error(`Erro ao fazer upload do arquivo ${originalFileName}`);
+          }
+
+          console.log(`Upload de ${originalFileName} concluído com sucesso`);
+
+          return {
+            originalName: originalFileName,
+            storagePath: safeFileName,
+            fileType: fileInfo.file.type,
+            wordCount: fileInfo.wordCount
+          };
+        })
+      );
+
+      // Criar solicitação no banco de dados - estrutura dinâmica para se adaptar a diferentes formatos de coluna
+      const uploadedFilesJson = JSON.stringify(uploadedFiles);
+      console.log("Arquivos para upload:", uploadedFilesJson);
+      
+      // Criar o objeto base com as informações principais
+      const translationRequest: Record<string, any> = {
         request_id: requestId,
         user_id: user.id,
-        file_name: fileInfo.file.name,
-        file_path: safeFileName,
-        bucket_name: 'arquivos_carregados',
-        file_type: fileInfo.file.type,
-        word_count: fileInfo.wordCount,
-        service_type: formData.translationType,
-        translation_subtype: formData.translationType === 'certificada' ? formData.translationSubtype : null,
-        source_language: formData.sourceLanguage,
-        target_language: formData.targetLanguage,
-        delivery_date: formData.deliveryDate.toISOString(),
         status: 'pending',
         created_at: new Date().toISOString(),
+        currency: 'BRL',
+        valid_until: addBusinessDays(new Date(), 7).toISOString(),
+        files: uploadedFilesJson,
+        file_count: filesInfo.files.length,
+        // Informações de cliente
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone || null,
+        // Campos de tradução
+        source_language: formData.sourceLanguage,
+        target_language: formData.targetLanguage,
+        translation_type: formData.translationType,
+        service_type: formData.translationType, // Adicionado para compatibilidade com o banco de dados
+        translation_subtype: formData.translationType === 'certificada' ? formData.translationSubtype : null,
+        delivery_date: formData.deliveryDate.toISOString(),
+        // Campos de preço
+        word_count: filesInfo.totalWordCount,
+        total_word_count: filesInfo.totalWordCount,
         price_per_word: quoteDetails?.pricePerWord || 0,
         total_price: quoteDetails?.totalPrice || 0,
-        currency: 'BRL',
-        valid_until: addBusinessDays(new Date(), 7).toISOString()
+        // Anexar os arquivos individuais para possível compatibilidade
+        // com implementações anteriores
+        ...(filesInfo.files.length === 1 ? {
+          file_name: filesInfo.files[0].file.name,
+          file_path: uploadedFiles[0].storagePath,
+          file_type: filesInfo.files[0].file.type,
+          file_word_count: filesInfo.files[0].wordCount
+        } : {})
       };
 
+      console.log("Enviando para o banco:", translationRequest);
+
+      // Usar upsert em vez de insert para ser mais flexível com as colunas
       const { error: requestError } = await supabase
         .from('translationrequests')
-        .insert(translationRequest);
+        .upsert(translationRequest, { 
+          onConflict: 'request_id',
+          ignoreDuplicates: false 
+        });
 
       if (requestError) {
+        console.error("Erro no banco:", requestError);
         throw requestError;
       }
+
+      // Mostrar modal de sucesso
+      setShowSuccessModal(true);
+      setSubmittedRequestId(requestId);
+
+      // Salvar os dados do pedido para exibição no modal (não serão zerados)
+      setSubmittedOrderData({
+        fileCount: filesInfo.files.length,
+        wordCount: filesInfo.totalWordCount,
+        totalSize: filesInfo.files.reduce((size, info) => size + info.file.size, 0),
+        totalPrice: quoteDetails?.totalPrice || 0,
+        requestId: requestId
+      });
 
       toast({
         title: "Cotação enviada com sucesso!",
         description: "Seu pedido foi registrado com sucesso. Em breve entraremos em contato.",
       });
 
-      form.reset();
-      setFileInfo(null);
-      setQuoteDetails(null);
-      setActiveStep(0);
-
     } catch (error) {
       console.error('Erro ao enviar dados:', error);
+      
+      // Exibir mensagem de erro mais detalhada para ajudar no diagnóstico
+      let errorMessage = "Ocorreu um erro ao processar sua solicitação.";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Adicionar informações adicionais para erros de banco de dados
+        if (typeof error === 'object' && error !== null) {
+          const supabaseError = error as any;
+          if (supabaseError.code || supabaseError.details || supabaseError.hint) {
+            errorMessage = `${errorMessage}\n\nDetalhes: ${JSON.stringify({
+              code: supabaseError.code,
+              details: supabaseError.details,
+              hint: supabaseError.hint
+            }, null, 2)}`;
+            
+            console.log("Detalhes do erro:", {
+              code: supabaseError.code,
+              details: supabaseError.details,
+              hint: supabaseError.hint,
+              message: supabaseError.message
+            });
+          }
+        }
+      }
+      
       toast({
         variant: "destructive",
         title: "Erro ao enviar cotação",
-        description: error instanceof Error ? error.message : "Ocorreu um erro ao processar sua solicitação.",
+        description: (
+          <div className="whitespace-pre-wrap max-h-40 overflow-y-auto">
+            {errorMessage}
+          </div>
+        ),
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Reset quando os arquivos mudam
+  useEffect(() => {
+    if (filesInfo.files.length === 0) {
+      setUploadProgress({});
+    }
+  }, [filesInfo.files]);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: ACCEPTED_FILE_TYPES,
-    maxFiles: 1,
+    maxFiles: 10, // Aumentar para permitir múltiplos arquivos
+    maxSize: MAX_FILE_SIZE,
     onDrop: handleFileDrop,
+    onDropRejected: (fileRejections) => {
+      const errorMessages = {
+        'file-too-large': `O arquivo excede o limite de tamanho (${formatFileSize(MAX_FILE_SIZE)})`,
+        'file-invalid-type': 'Tipo de arquivo não suportado',
+        'too-many-files': 'Número máximo de arquivos excedido (máximo: 10)',
+      };
+      
+      const errors = fileRejections.map(rejection => {
+        const file = rejection.file;
+        const errorCodes = rejection.errors.map(e => e.code);
+        const errorMessages = rejection.errors.map(e => {
+          // Personalizar mensagens de erro comuns
+          if (e.code === 'file-too-large') {
+            return `O arquivo excede o limite de tamanho (${formatFileSize(MAX_FILE_SIZE)})`;
+          } else if (e.code === 'file-invalid-type') {
+            return 'Tipo de arquivo não suportado (use PDF, DOC, DOCX ou TXT)';
+          }
+          return e.message;
+        }).join(', ');
+        
+        return `${file.name} (${formatFileSize(file.size)}): ${errorMessages}`;
+      }).join('\n');
+      
+      toast({
+        variant: "destructive",
+        title: "Arquivo(s) rejeitado(s)",
+        description: errors,
+      });
+    }
   });
 
   async function extractTextFromPDF(file: File): Promise<string> {
@@ -368,19 +683,46 @@ const NewQuote: React.FC = () => {
 
   // Função para gerar preview do arquivo
   useEffect(() => {
-    if (fileInfo?.file && showPreview) {
-      const url = URL.createObjectURL(fileInfo.file);
+    if (showPreview && filesInfo.files.length > 0) {
+      // Mostrar apenas o primeiro arquivo para preview por simplicidade
+      const url = URL.createObjectURL(filesInfo.files[0].file);
       setPreviewUrl(url);
       return () => URL.revokeObjectURL(url);
     }
-  }, [fileInfo?.file, showPreview]);
+  }, [filesInfo.files, showPreview]);
 
   // Função para abrir preview
   const handlePreviewClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (fileInfo?.file) {
+    if (filesInfo.files.length > 0) {
       setShowPreview(true);
     }
+  };
+
+  // Função para remover um arquivo específico
+  const removeFile = (index: number) => {
+    setFilesInfo(prev => {
+      const updatedFiles = prev.files.filter((_, i) => i !== index);
+      const totalCount = updatedFiles.reduce((sum, file) => sum + file.wordCount, 0);
+      
+      // Recalcular cotação se houver arquivos
+      if (updatedFiles.length > 0) {
+        calculateQuote(totalCount);
+      } else {
+        setQuoteDetails(null);
+      }
+      
+      return {
+        files: updatedFiles,
+        totalWordCount: totalCount
+      };
+    });
+  };
+
+  // Função para limpar todos os arquivos
+  const clearAllFiles = () => {
+    setFilesInfo({ files: [], totalWordCount: 0 });
+    setQuoteDetails(null);
   };
 
   return (
@@ -625,32 +967,124 @@ const NewQuote: React.FC = () => {
                       isDragActive ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50"
                     )}>
                       <input {...getInputProps()} />
-                      {fileInfo ? (
-                        <div className="space-y-3">
-                          <p className="text-base sm:text-lg font-medium break-all">{fileInfo.file.name}</p>
-                          {fileInfo.isProcessing ? (
-                            <div className="flex items-center justify-center space-x-2 text-muted-foreground">
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              <p className="text-sm sm:text-base">Processando arquivo...</p>
-                            </div>
-                          ) : (
-                            <p className="text-sm sm:text-base text-muted-foreground">
-                              {fileInfo.wordCount.toLocaleString('pt-BR')} palavras
+                      {filesInfo.files.length ? (
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center">
+                            <p className="text-base sm:text-lg font-medium">
+                              {filesInfo.files.length} {filesInfo.files.length === 1 ? 'arquivo' : 'arquivos'}
                             </p>
-                          )}
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm sm:text-base text-muted-foreground">
+                                Total: {filesInfo.totalWordCount.toLocaleString('pt-BR')} palavras
+                              </p>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-7 w-7 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  clearAllFiles();
+                                }}
+                                title="Limpar todos os arquivos"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {filesInfo.files.map((fileInfo, index) => (
+                              <div key={fileInfo.file.name + index} className="flex justify-between items-center p-2 bg-muted/30 rounded">
+                                <div className="flex items-center space-x-2 overflow-hidden flex-grow">
+                                  <p className="text-sm font-medium truncate">{fileInfo.file.name}</p>
+                                  {fileInfo.isProcessing ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                      ({fileInfo.wordCount.toLocaleString('pt-BR')} palavras - {formatFileSize(fileInfo.file.size)})
+                                    </span>
+                                  )}
+                                </div>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 w-8 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeFile(index);
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <p className="text-sm sm:text-base">Arraste e solte seus arquivos aqui, ou clique para selecionar</p>
+                          <p className="text-xs sm:text-sm text-muted-foreground">
+                            Formatos aceitos: PDF, DOC, DOCX, TXT
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Limite de {formatFileSize(MAX_FILE_SIZE)} por arquivo | Total: {formatFileSize(MAX_TOTAL_SIZE)}
+                          </p>
                         </div>
                       ) : isDragActive ? (
-                        <p className="text-sm sm:text-base text-primary">Solte o arquivo aqui...</p>
+                        <p className="text-sm sm:text-base text-primary">Solte os arquivos aqui...</p>
                       ) : (
                         <div className="space-y-3">
                           <Upload className="w-8 h-8 sm:w-12 sm:h-12 mx-auto text-muted-foreground" />
-                          <p className="text-sm sm:text-base">Arraste e solte seu arquivo aqui, ou clique para selecionar</p>
+                          <p className="text-sm sm:text-base">Arraste e solte seus arquivos aqui, ou clique para selecionar</p>
                           <p className="text-xs sm:text-sm text-muted-foreground">
                             Formatos aceitos: PDF, DOC, DOCX, TXT
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Limite de {formatFileSize(MAX_FILE_SIZE)} por arquivo | Total: {formatFileSize(MAX_TOTAL_SIZE)}
                           </p>
                         </div>
                       )}
                     </div>
+
+                    {filesInfo.files.length > 0 && (
+                      <div className="bg-muted/30 rounded-lg p-4">
+                        <p className="text-sm sm:text-base font-medium mb-2">Resumo:</p>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground">Total de arquivos:</span>
+                            <span>{filesInfo.files.length}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground">Total de palavras:</span>
+                            <span>{filesInfo.totalWordCount.toLocaleString('pt-BR')}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground">Tamanho total:</span>
+                            <span>{formatFileSize(filesInfo.files.reduce((size, info) => size + info.file.size, 0))}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-muted-foreground">Limite:</span>
+                            <span>{formatFileSize(MAX_TOTAL_SIZE)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Mostrar status de processamento de arquivos */}
+                    {processingStatus.isProcessing && (
+                      <div className="mt-4 p-4 bg-muted/30 rounded-lg space-y-2">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-medium">Processando arquivos</span>
+                          <span>{processingStatus.processed}/{processingStatus.total}</span>
+                        </div>
+                        <Progress 
+                          value={(processingStatus.processed / processingStatus.total) * 100} 
+                          className="h-2" 
+                        />
+                        <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <p>Calculando número de palavras... Por favor, aguarde.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -682,18 +1116,18 @@ const NewQuote: React.FC = () => {
                           <div className="space-y-2 text-xs sm:text-sm">
                             <div className="flex justify-between items-center">
                               <span className="text-muted-foreground">Documentos:</span>
-                              <span>1</span>
+                              <span>{filesInfo.files.length}</span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-muted-foreground">Páginas:</span>
                               <span>-</span>
                             </div>
-                            {fileInfo && (
+                            {filesInfo.files.length && (
                               <div className="mt-2 bg-accent/50 rounded p-2 flex items-center justify-between">
                                 <span className="flex items-center gap-2 min-w-0">
-                                  <span className="text-xs sm:text-sm truncate">{fileInfo.file.name}</span>
+                                  <span className="text-xs sm:text-sm truncate">{filesInfo.files[0].file.name}</span>
                                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                    {Math.round(fileInfo.file.size / 1024)} KB
+                                    {Math.round(filesInfo.files[0].file.size / 1024)} KB
                                   </span>
                                 </span>
                                 <Button 
@@ -730,17 +1164,17 @@ const NewQuote: React.FC = () => {
                         <div className="rounded-lg border bg-card p-3 sm:p-4">
                           <h3 className="text-sm font-medium mb-2 sm:mb-3">Preço</h3>
                           <div className="space-y-2 text-xs sm:text-sm">
-                            <div className="flex justify-between items-center">
-                              <span className="text-muted-foreground">Preço unitário:</span>
-                              <span>R$ {quoteDetails.pricePerWord.toFixed(2)}</span>
+                            <div className="flex justify-between mb-1 text-sm">
+                              <span className="text-muted-foreground">Quantidade:</span>
+                              <span>{filesInfo.files.length} {filesInfo.files.length === 1 ? 'arquivo' : 'arquivos'}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-muted-foreground">Adicional:</span>
-                              <span>R$ 0,00</span>
+                            <div className="flex justify-between mb-1 text-sm">
+                              <span className="text-muted-foreground">Palavras:</span>
+                              <span>{filesInfo.totalWordCount.toLocaleString('pt-BR')}</span>
                             </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-muted-foreground">Desconto:</span>
-                              <span>0,00</span>
+                            <div className="flex justify-between mb-1 text-sm">
+                              <span className="text-muted-foreground">Valor por palavra:</span>
+                              <span>R$ {quoteDetails?.pricePerWord.toFixed(2)}</span>
                             </div>
                             <Separator className="my-2" />
                             <div className="flex justify-between items-center font-medium">
@@ -791,17 +1225,17 @@ const NewQuote: React.FC = () => {
                   {activeStep < 2 && (
                     <Button
                       type="button"
-                      onClick={async () => {
+                      onClick={() => {
                         if (activeStep === 0) {
-                          const isValid = await form.trigger();
+                          const isValid = form.trigger();
                           if (isValid) {
                             setActiveStep(1);
                           }
-                        } else if (activeStep === 1 && fileInfo && !fileInfo.isProcessing) {
+                        } else if (activeStep === 1 && filesInfo.files.length > 0 && !filesInfo.files.some(f => f.isProcessing)) {
                           setActiveStep(2);
                         }
                       }}
-                      disabled={activeStep === 1 && (!fileInfo || fileInfo.isProcessing)}
+                      disabled={activeStep === 1 && (filesInfo.files.length === 0 || filesInfo.files.some(f => f.isProcessing))}
                     >
                       Próximo
                     </Button>
@@ -812,6 +1246,77 @@ const NewQuote: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {isSubmitting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <Card className="w-[90%] max-w-md">
+            <CardHeader>
+              <h3 className="text-lg font-medium">Enviando sua solicitação</h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Por favor, aguarde enquanto processamos seus arquivos. 
+                Não feche esta janela durante o processo.
+              </p>
+              
+              {Object.keys(uploadProgress).length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-medium">Progresso total:</span>
+                    <span>
+                      {Math.floor(
+                        Object.values(uploadProgress).reduce((sum, p) => sum + p, 0) / 
+                        Math.max(Object.keys(uploadProgress).length, 1)
+                      )}%
+                    </span>
+                  </div>
+                  
+                  <Progress 
+                    value={
+                      Object.values(uploadProgress).reduce((sum, p) => sum + p, 0) / 
+                      Math.max(Object.keys(uploadProgress).length, 1)
+                    } 
+                    className="h-2" 
+                  />
+                  
+                  <div className="border rounded divide-y max-h-48 overflow-y-auto">
+                    {filesInfo.files.map((fileInfo, index) => {
+                      const fileName = fileInfo.file.name;
+                      const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+                      const fileNameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
+                      const fileExt = fileName.substring(fileName.lastIndexOf('.'));
+                      const safeFileName = `${fileNameWithoutExt}_${timestamp}${fileExt}`.replace(/[^a-zA-Z0-9.-_]/g, '_');
+                      const progress = uploadProgress[safeFileName] || 0;
+                      
+                      return (
+                        <div key={fileName + index} className="p-2 space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="truncate max-w-[200px] font-medium">{fileName}</span>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {formatFileSize(fileInfo.file.size)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-muted-foreground">
+                              {progress < 100 ? 'Enviando...' : 'Concluído'}
+                            </span>
+                            <span>{Math.floor(progress)}%</span>
+                          </div>
+                          <Progress value={progress} className="h-1" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-[95vw] sm:max-w-4xl h-[90vh] p-0">
@@ -827,6 +1332,98 @@ const NewQuote: React.FC = () => {
               />
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSuccessModal} onOpenChange={(open) => {
+        if (!open) {
+          form.reset();
+          setFilesInfo({ files: [], totalWordCount: 0 });
+          setQuoteDetails(null);
+          setActiveStep(0);
+        }
+        setShowSuccessModal(open);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Solicitação Enviada com Sucesso!</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-center">
+              <div className="rounded-full bg-green-100 p-3">
+                <svg
+                  className="h-6 w-6 text-green-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+            </div>
+            
+            <p className="text-center text-sm">
+              Sua solicitação de tradução foi registrada com sucesso. 
+              Nossa equipe analisará os arquivos enviados e confirmará o orçamento.
+            </p>
+            
+            <div className="bg-muted p-3 rounded-md">
+              <p className="text-xs text-muted-foreground mb-1">Detalhes da solicitação:</p>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">ID da solicitação:</span>
+                  <span className="font-mono text-xs">{submittedRequestId}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Arquivos enviados:</span>
+                  <span>{submittedOrderData?.fileCount}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Total de palavras:</span>
+                  <span>{submittedOrderData?.wordCount.toLocaleString('pt-BR')}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Tamanho total:</span>
+                  <span>{formatFileSize(submittedOrderData?.totalSize || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Valor estimado:</span>
+                  <span>R$ {submittedOrderData?.totalPrice.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-center text-xs text-muted-foreground">
+              Entraremos em contato em breve através do e-mail registrado.
+            </p>
+            
+            <div className="mt-4">
+              <CheckoutButton
+                requestId={submittedOrderData?.requestId || ''}
+                amount={submittedOrderData?.totalPrice || 0}
+                customerEmail={form.getValues().email}
+                customerName={form.getValues().name}
+                description={`Tradução - ${submittedOrderData?.wordCount || 0} palavras`}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-center">
+            <Button 
+              onClick={() => setShowSuccessModal(false)}
+              className="w-full sm:w-auto"
+            >
+              Entendido
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

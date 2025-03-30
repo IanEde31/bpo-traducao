@@ -32,6 +32,7 @@ interface TranslationDetails {
   content?: string;
   translated_content?: string;
   service_type?: string;
+  translated_file_path?: string; 
 }
 
 export function TranslatorWorkspace() {
@@ -57,6 +58,9 @@ export function TranslatorWorkspace() {
       try {
         if (!requestId) return;
 
+        console.log("=== INICIANDO CARREGAMENTO DO WORKSPACE ===");
+        console.log("ID da requisição:", requestId);
+
         // Buscar os dados da requisição de tradução na tabela correta
         const { data, error } = await supabase
           .from("translationrequests")
@@ -66,6 +70,9 @@ export function TranslatorWorkspace() {
 
         if (error) throw error;
 
+        console.log("Dados da requisição obtidos:", data);
+        console.log("Campo translated_file_path:", data.translated_file_path);
+        
         setTranslation(data);
 
         // Buscar o arquivo para pré-visualização
@@ -79,6 +86,96 @@ export function TranslatorWorkspace() {
 
           // Tentar obter o conteúdo do arquivo se for um tipo de texto
           await loadFileContent(data.file_path, data.file_name);
+        }
+
+        // Verificar se já existe um arquivo traduzido para este pedido
+        if (data.translated_file_path) {
+          console.log("=== ARQUIVO TRADUZIDO ENCONTRADO ===");
+          console.log("Caminho do arquivo traduzido:", data.translated_file_path);
+          
+          try {
+            // Para compatibilidade com diferentes formatos de caminho, garantir que o caminho está normalizado
+            // Em alguns casos pode ser apenas o nome do arquivo, em outros pode incluir a estrutura de diretórios
+            const translatedPath = data.translated_file_path;
+            
+            console.log("Tentando criar URL assinada para:", translatedPath);
+            
+            // Criar URL assinada para o arquivo traduzido
+            const { data: translatedUrlData, error: translatedUrlError } = await supabase.storage
+              .from("arquivos_traduzidos")
+              .createSignedUrl(translatedPath, 3600);
+            
+            if (translatedUrlError) {
+              console.error("ERRO ao criar URL assinada para o documento traduzido:", translatedUrlError);
+              
+              // Para compatibilidade com formatos antigos, tentar com "traduzidos/" prefixado se ainda não tem
+              if (!translatedPath.startsWith("traduzidos/") && !translatedUrlData) {
+                console.log("Tentando formato alternativo com prefixo 'traduzidos/'");
+                const alternativePath = `traduzidos/${data.request_id}/${translatedPath.split('/').pop()}`;
+                
+                const { data: altUrlData, error: altUrlError } = await supabase.storage
+                  .from("arquivos_traduzidos")
+                  .createSignedUrl(alternativePath, 3600);
+                  
+                if (!altUrlError && altUrlData) {
+                  console.log("URL alternativa criada com sucesso:", altUrlData.signedUrl);
+                  setTranslatedFileUrl(altUrlData.signedUrl);
+                  
+                  // Atualizar o caminho no banco para o formato padronizado
+                  try {
+                    const { error: updateError } = await supabase
+                      .from("translationrequests")
+                      .update({ translated_file_path: alternativePath })
+                      .eq("request_id", data.request_id);
+                      
+                    if (updateError) {
+                      console.error("Erro ao atualizar caminho para formato padronizado:", updateError);
+                    } else {
+                      console.log("Caminho atualizado para formato padronizado:", alternativePath);
+                    }
+                  } catch (e) {
+                    console.error("Erro ao tentar atualizar caminho para formato padronizado:", e);
+                  }
+                }
+              }
+            } else if (translatedUrlData) {
+              console.log("URL assinada do arquivo traduzido criada com sucesso:", translatedUrlData.signedUrl);
+              setTranslatedFileUrl(translatedUrlData.signedUrl);
+              
+              // Se for um arquivo de texto, tentar carregar seu conteúdo
+              const textFileExtensions = [".txt", ".md", ".html", ".xml", ".json", ".csv"];
+              const hasTextExtension = textFileExtensions.some(ext => 
+                data.translated_file_path.toLowerCase().endsWith(ext)
+              );
+              
+              if (hasTextExtension) {
+                try {
+                  console.log("Tentando baixar conteúdo do arquivo de texto traduzido");
+                  const { data: translatedFileData, error: downloadError } = await supabase.storage
+                    .from("arquivos_traduzidos")
+                    .download(translatedPath);
+                    
+                  if (downloadError) {
+                    console.error("ERRO ao baixar conteúdo do arquivo traduzido:", downloadError);
+                  } else if (translatedFileData) {
+                    const text = await translatedFileData.text();
+                    setTranslatedContent(text);
+                    console.log("Conteúdo do documento traduzido carregado com sucesso");
+                  } else {
+                    console.warn("Download do arquivo traduzido não retornou dados");
+                  }
+                } catch (e) {
+                  console.error("ERRO ao processar o conteúdo do documento traduzido:", e);
+                }
+              }
+            } else {
+              console.warn("Não foi possível obter URL assinada - retorno vazio");
+            }
+          } catch (e) {
+            console.error("ERRO ao processar o documento traduzido:", e);
+          }
+        } else {
+          console.log("Nenhum arquivo traduzido encontrado para esta requisição");
         }
 
       } catch (error) {
@@ -197,7 +294,9 @@ export function TranslatorWorkspace() {
       const sourceLang = translation.source_language.toLowerCase();
       const targetLang = translation.target_language.toLowerCase();
 
+      console.log(`=== INICIANDO TRADUÇÃO COM IA ===`);
       console.log(`Preparando tradução: ${sourceLang} -> ${targetLang}`);
+      console.log(`ID da requisição: ${translation.request_id}`);
 
       // Download do arquivo original
       const { data: fileData, error: fileError } = await supabase.storage
@@ -248,9 +347,9 @@ export function TranslatorWorkspace() {
       const fileExt = fileName.includes('.') ? '.' + fileName.split('.').pop() : '';
       const translatedFileName = `file_${timestamp}_${randomNum}${fileExt}`;
 
-      // Caminho SEM estrutura de pasta - diretamente na raiz do bucket
-      const translatedFilePath = translatedFileName;
-      console.log("Salvando arquivo com nome simplificado:", translatedFilePath);
+      // Modificado: Usar a mesma estrutura de pastas que o TranslatorOrderCard
+      const translatedFilePath = `traduzidos/${translation.request_id}/${translatedFileName}`;
+      console.log("Salvando arquivo com estrutura de pastas padrão:", translatedFilePath);
 
       // Upload do arquivo traduzido - simplificado ao máximo
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -293,6 +392,37 @@ export function TranslatorWorkspace() {
         }
       }
 
+      // IMPORTANTE: Atualizar o campo translated_file_path na tabela translationrequests
+      console.log("=== ATUALIZANDO REGISTRO NO BANCO DE DADOS ===");
+      console.log("ID da requisição para atualização:", translation.request_id);
+      console.log("Caminho do arquivo traduzido:", translatedFilePath);
+      
+      const { data: updateData, error: updateError } = await supabase
+        .from("translationrequests")
+        .update({ 
+          translated_file_path: translatedFilePath 
+        })
+        .eq("request_id", translation.request_id)
+        .select();
+
+      if (updateError) {
+        console.error("ERRO ao atualizar registro:", updateError);
+        throw new Error(`Falha ao atualizar registro com o caminho do arquivo traduzido: ${updateError.message}`);
+      }
+      
+      console.log("Registro atualizado com sucesso:", updateData);
+      
+      // Atualizar o objeto translation local com o novo caminho
+      setTranslation(prevTranslation => {
+        if (prevTranslation) {
+          return {
+            ...prevTranslation,
+            translated_file_path: translatedFilePath
+          };
+        }
+        return prevTranslation;
+      });
+
       // Atualizar status
       toast({
         title: "Tradução concluída",
@@ -320,6 +450,9 @@ export function TranslatorWorkspace() {
     try {
       setSaveLoading(true);
       
+      console.log("=== INICIANDO FINALIZAÇÃO DA TRADUÇÃO ===");
+      console.log("ID da requisição:", translation.request_id);
+      
       // Verificar arquivo traduzido
       if (!translatedFileUrl && !translatedContent) {
         toast({
@@ -342,10 +475,10 @@ export function TranslatorWorkspace() {
         const fileName = `texto_${timestamp}_${randomNum}.txt`;
         const fileBlob = new Blob([translatedContent], { type: 'text/plain' });
         
-        // Caminho simplificado - apenas o nome do arquivo
-        translatedFilePath = fileName;
+        // Usar estrutura padronizada de pastas
+        translatedFilePath = `traduzidos/${translation.request_id}/${fileName}`;
         
-        console.log("Salvando texto em:", translatedFilePath);
+        console.log("Salvando texto com estrutura de pastas padrão:", translatedFilePath);
         
         // Upload simplificado ao máximo
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -381,7 +514,7 @@ export function TranslatorWorkspace() {
         }
       }
       
-      console.log("Caminho do arquivo para inserção na tabela translations:", translatedFilePath);
+      console.log("Caminho do arquivo para inserção nas tabelas:", translatedFilePath);
       
       // Registrar tradução
       const { error: insertError } = await supabase
@@ -398,19 +531,37 @@ export function TranslatorWorkspace() {
         throw insertError;
       }
       
-      // Atualizar status
-      const { error: updateError } = await supabase
+      console.log("Registro inserido com sucesso na tabela translations");
+      
+      // Atualizar status e o caminho do arquivo traduzido na tabela translationrequests
+      console.log("Atualizando status e caminho na tabela translationrequests");
+      const { data: updateData, error: updateError } = await supabase
         .from("translationrequests")
         .update({ 
           status: "Concluído",
           translated_file_path: translatedFilePath 
         })
-        .eq("request_id", translation.request_id);
+        .eq("request_id", translation.request_id)
+        .select();
         
       if (updateError) {
         console.error("Erro ao atualizar status:", JSON.stringify(updateError));
         throw updateError;
       }
+      
+      console.log("Status e caminho atualizados com sucesso:", updateData);
+      
+      // Atualizar o objeto translation local
+      setTranslation(prevTranslation => {
+        if (prevTranslation) {
+          return {
+            ...prevTranslation,
+            status: "Concluído",
+            translated_file_path: translatedFilePath
+          };
+        }
+        return prevTranslation;
+      });
       
       toast({
         title: "Tradução finalizada",
@@ -485,7 +636,7 @@ export function TranslatorWorkspace() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Documento Original */}
             <Card className="p-4">
-              <h3 className="text-lg font-medium mb-2">Documento Original</h3>
+              <h3 className="text-lg font-medium mb-2">Documento do cliente</h3>
               
               <Tabs defaultValue="preview">
                 <TabsList className="mb-2">
