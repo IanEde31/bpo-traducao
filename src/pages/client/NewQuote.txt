@@ -45,7 +45,6 @@ import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-// Removida importação problemática de pptxjs
 import {
   Dialog,
   DialogContent,
@@ -82,7 +81,6 @@ const ACCEPTED_FILE_TYPES = {
   'application/pdf': ['.pdf'],
   'application/msword': ['.doc'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
   'text/plain': ['.txt'],
 };
 
@@ -440,19 +438,17 @@ const NewQuote: React.FC = () => {
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('arquivos_carregados')
             .upload(safeFileName, fileInfo.file, {
-              cacheControl: '3600',
-              upsert: false
+              onProgress: (progress) => {
+                setUploadProgress(prev => ({ ...prev, [safeFileName]: progress.percentage }));
+              }
             });
 
-          // Atualizar o progresso manualmente após o upload
-          setUploadProgress(prev => ({ ...prev, [safeFileName]: 100 }));
           if (uploadError) {
             throw new Error(`Erro ao fazer upload do arquivo ${originalFileName}`);
           }
 
           console.log(`Upload de ${originalFileName} concluído com sucesso`);
 
-          // Retornar objeto no formato padronizado para o campo JSONB 'files'
           return {
             originalName: originalFileName,
             storagePath: safeFileName,
@@ -461,25 +457,10 @@ const NewQuote: React.FC = () => {
           };
         })
       );
-      
-      // Validar se o número de arquivos e a contagem total de palavras estão corretos
-      if (uploadedFiles.length !== filesInfo.files.length) {
-        throw new Error('Erro na validação: o número de arquivos processados não corresponde ao número de arquivos enviados');
-      }
-      
-      // Verificar se a soma das contagens de palavras corresponde ao total
-      const totalWordCountFromFiles = uploadedFiles.reduce((sum, file) => sum + file.wordCount, 0);
-      if (totalWordCountFromFiles !== filesInfo.totalWordCount) {
-        console.warn('Aviso: A soma da contagem de palavras dos arquivos não corresponde ao total calculado anteriormente');
-        // Atualizar o total para garantir consistência
-        setFilesInfo(prev => ({
-          ...prev,
-          totalWordCount: totalWordCountFromFiles
-        }));
-      }
 
-      // Criar solicitação no banco de dados usando o campo JSONB para armazenar múltiplos arquivos
-      console.log("Arquivos para upload:", uploadedFiles);
+      // Criar solicitação no banco de dados - estrutura dinâmica para se adaptar a diferentes formatos de coluna
+      const uploadedFilesJson = JSON.stringify(uploadedFiles);
+      console.log("Arquivos para upload:", uploadedFilesJson);
       
       // Criar o objeto base com as informações principais
       const translationRequest: Record<string, any> = {
@@ -489,9 +470,7 @@ const NewQuote: React.FC = () => {
         created_at: new Date().toISOString(),
         currency: 'BRL',
         valid_until: addBusinessDays(new Date(), 7).toISOString(),
-        // Armazenar diretamente o array de objetos no campo JSONB 'files'
-        // O Supabase vai converter automaticamente para JSONB
-        files: uploadedFiles,
+        files: uploadedFilesJson,
         file_count: filesInfo.files.length,
         // Informações de cliente
         name: formData.name,
@@ -501,16 +480,22 @@ const NewQuote: React.FC = () => {
         source_language: formData.sourceLanguage,
         target_language: formData.targetLanguage,
         translation_type: formData.translationType,
-        service_type: formData.translationType,
+        service_type: formData.translationType, // Adicionado para compatibilidade com o banco de dados
         translation_subtype: formData.translationType === 'certificada' ? formData.translationSubtype : null,
         delivery_date: formData.deliveryDate.toISOString(),
         // Campos de preço
-        // Não usar mais o campo word_count individual, apenas o total_word_count
+        word_count: filesInfo.totalWordCount,
         total_word_count: filesInfo.totalWordCount,
         price_per_word: quoteDetails?.pricePerWord || 0,
-        total_price: quoteDetails?.totalPrice || 0
-        // Removidos os campos individuais para compatibilidade com versões anteriores
-        // pois agora usaremos exclusivamente o campo 'files' para armazenar informações dos arquivos
+        total_price: quoteDetails?.totalPrice || 0,
+        // Anexar os arquivos individuais para possível compatibilidade
+        // com implementações anteriores
+        ...(filesInfo.files.length === 1 ? {
+          file_name: filesInfo.files[0].file.name,
+          file_path: uploadedFiles[0].storagePath,
+          file_type: filesInfo.files[0].file.type,
+          file_word_count: filesInfo.files[0].wordCount
+        } : {})
       };
 
       console.log("Enviando para o banco:", translationRequest);
@@ -616,7 +601,7 @@ const NewQuote: React.FC = () => {
           if (e.code === 'file-too-large') {
             return `O arquivo excede o limite de tamanho (${formatFileSize(MAX_FILE_SIZE)})`;
           } else if (e.code === 'file-invalid-type') {
-            return 'Tipo de arquivo não suportado (use PDF, DOC, DOCX, PPTX ou TXT)';
+            return 'Tipo de arquivo não suportado (use PDF, DOC, DOCX ou TXT)';
           }
           return e.message;
         }).join(', ');
@@ -655,79 +640,6 @@ const NewQuote: React.FC = () => {
     return result.value;
   }
 
-  async function extractTextFromPPTX(file: File): Promise<string> {
-    try {
-      // Importar JSZip dinamicamente para extrair o conteúdo do arquivo PPTX
-      const JSZip = (await import('jszip')).default;
-      
-      // Ler o arquivo como ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      
-      // Carregar o arquivo PPTX como um arquivo ZIP
-      const zip = await JSZip.loadAsync(arrayBuffer);
-      
-      // Coletar todo o texto dos slides
-      let allText = '';
-      
-      // PPTX armazena o conteúdo dos slides em ppt/slides/slide*.xml
-      const slideFiles = Object.keys(zip.files).filter(name => 
-        name.startsWith('ppt/slides/slide') && name.endsWith('.xml')
-      );
-      
-      // Processar cada slide
-      for (const slideFile of slideFiles) {
-        // Obter o conteúdo XML do slide
-        const slideXml = await zip.files[slideFile].async('text');
-        
-        // Extrair texto de todas as tags <a:t> que contêm o texto dos slides
-        const textMatches = slideXml.match(/<a:t>([^<]*)<\/a:t>/g) || [];
-        
-        // Adicionar o texto extraído ao texto total
-        for (const match of textMatches) {
-          // Extrair o texto entre as tags <a:t> e </a:t>
-          const text = match.replace(/<a:t>([^<]*)<\/a:t>/, '$1');
-          allText += text + ' ';
-        }
-        
-        // Também extrair texto de tags <a:t> com atributos (como estilos)
-        const textWithAttrsMatches = slideXml.match(/<a:t [^>]*>([^<]*)<\/a:t>/g) || [];
-        
-        for (const match of textWithAttrsMatches) {
-          // Extrair o texto entre as tags <a:t ...> e </a:t>
-          const text = match.replace(/<a:t [^>]*>([^<]*)<\/a:t>/, '$1');
-          allText += text + ' ';
-        }
-      }
-      
-      // Também verificar as notas dos slides, que podem conter texto adicional
-      const noteFiles = Object.keys(zip.files).filter(name => 
-        name.startsWith('ppt/notesSlides/notesSlide') && name.endsWith('.xml')
-      );
-      
-      for (const noteFile of noteFiles) {
-        const noteXml = await zip.files[noteFile].async('text');
-        const textMatches = noteXml.match(/<a:t>([^<]*)<\/a:t>/g) || [];
-        
-        for (const match of textMatches) {
-          const text = match.replace(/<a:t>([^<]*)<\/a:t>/, '$1');
-          allText += text + ' ';
-        }
-        
-        const textWithAttrsMatches = noteXml.match(/<a:t [^>]*>([^<]*)<\/a:t>/g) || [];
-        
-        for (const match of textWithAttrsMatches) {
-          const text = match.replace(/<a:t [^>]*>([^<]*)<\/a:t>/, '$1');
-          allText += text + ' ';
-        }
-      }
-      
-      return allText;
-    } catch (error) {
-      console.error('Erro ao processar arquivo PPTX:', error);
-      throw new Error('Não foi possível processar o arquivo PPTX. Por favor, tente outro formato.');
-    }
-  }
-
   async function calculateWordCount(file: File): Promise<number> {
     try {
       const fileType = file.type;
@@ -740,8 +652,6 @@ const NewQuote: React.FC = () => {
         fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {
         text = await extractTextFromWord(file);
-      } else if (fileType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-        text = await extractTextFromPPTX(file);
       } else if (fileType === 'text/plain') {
         text = await file.text();
       } else {

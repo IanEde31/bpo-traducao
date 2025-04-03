@@ -6,6 +6,13 @@ import { DeepLService } from "@/services/deepl";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
 
+interface FileInfo {
+  originalName: string;
+  storagePath: string;
+  fileType: string;
+  wordCount: number;
+}
+
 interface TranslatorOrder {
   id: string;                // ID local ou temporário
   request_id?: string;       // ID real da tabela translationrequests (chave primária)
@@ -18,7 +25,11 @@ interface TranslatorOrder {
     direction?: string;
     deadline?: string;
   };
-  documents: {
+  // Suporte para o novo formato (múltiplos arquivos)
+  files?: FileInfo[];
+  file_count?: number;
+  // Suporte para o formato legado (único arquivo)
+  documents?: {
     name: string;
     size: string;
     path?: string;
@@ -32,6 +43,10 @@ interface TranslatorOrder {
   translated_file_path?: string; 
   translation_status?: string;
   user_id?: string;         // ID do usuário que criou o pedido
+  // Campos legados para compatibilidade
+  file_name?: string;
+  file_path?: string;
+  word_count?: number;
 }
 
 interface TranslatorOrderCardProps {
@@ -78,6 +93,42 @@ export function TranslatorOrderCard({
   // Debug: Imprime o objeto order completo para verificar sua estrutura
   useEffect(() => {
     console.log("TranslatorOrderCard - Estrutura completa do pedido:", JSON.stringify(order, null, 2));
+  }, [order]);
+  
+  // Função para adaptar os dados do pedido para o formato esperado pelo componente
+  useEffect(() => {
+    // Se o pedido já estiver no formato esperado, não fazer nada
+    if (order.documents && order.documents.length > 0) {
+      return;
+    }
+    
+    // Se temos o novo formato de múltiplos arquivos, adaptar para o formato esperado
+    if (order.files && order.files.length > 0) {
+      const adaptedDocuments = order.files.map(file => ({
+        name: file.originalName,
+        size: `${file.wordCount} palavras`,
+        path: file.storagePath
+      }));
+      
+      // Atualizar o objeto order com os documentos adaptados
+      order.documents = adaptedDocuments;
+    } 
+    // Se temos o formato legado com um único arquivo
+    else if (order.file_name && order.file_path) {
+      order.documents = [{
+        name: order.file_name,
+        size: order.word_count ? `${order.word_count} palavras` : 'Tamanho desconhecido',
+        path: order.file_path
+      }];
+    }
+    // Caso não tenha nenhuma informação de arquivo
+    else {
+      order.documents = [{
+        name: 'Arquivo não encontrado',
+        size: 'Tamanho desconhecido',
+        path: ''
+      }];
+    }
   }, [order]);
 
   useEffect(() => {

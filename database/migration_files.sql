@@ -103,17 +103,56 @@ BEGIN
                     WHEN file_path LIKE '%.txt' THEN 'text/plain'
                     ELSE 'application/octet-stream'
                 END,
-                'wordCount', 0  -- Valor fixo já que não temos a coluna total_word_count
+                'wordCount', COALESCE(word_count, 0)  -- Usar word_count se disponível
             )
-        )::jsonb
+        )::jsonb,
+        -- Atualizar também o campo file_count para 1 se for nulo
+        file_count = COALESCE(file_count, 1),
+        -- Garantir que total_word_count seja preenchido
+        total_word_count = COALESCE(total_word_count, word_count, 0)
         WHERE file_path IS NOT NULL 
         AND (files IS NULL OR files::text = '[]' OR files::text = 'null');
+        
+        -- Corrigir registros onde files é uma string JSON em vez de JSONB
+        UPDATE translationrequests
+        SET files = files::jsonb
+        WHERE files IS NOT NULL 
+        AND jsonb_typeof(files::jsonb) = 'string';
+        
+        -- Verificar e corrigir registros onde o campo files contém um array serializado como string
+        UPDATE translationrequests
+        SET files = files::jsonb::text::jsonb
+        WHERE files IS NOT NULL 
+        AND jsonb_typeof(files::jsonb) = 'string'
+        AND files::jsonb::text LIKE '[%]';
     END IF;
 END $$;
 
 -- Criar índices para melhorar a performance
 CREATE INDEX IF NOT EXISTS idx_translationrequests_files ON translationrequests USING GIN (files);
 CREATE INDEX IF NOT EXISTS idx_translationrequests_email ON translationrequests (email);
+CREATE INDEX IF NOT EXISTS idx_translationrequests_status ON translationrequests (status);
+CREATE INDEX IF NOT EXISTS idx_translationrequests_user_id ON translationrequests (user_id);
+
+-- Verificar e corrigir inconsistências nos dados
+DO $$
+BEGIN
+    -- Atualizar file_count para corresponder ao número real de arquivos no campo files
+    UPDATE translationrequests
+    SET file_count = COALESCE(jsonb_array_length(files), 0)
+    WHERE file_count IS NULL OR file_count != COALESCE(jsonb_array_length(files), 0);
+    
+    -- Atualizar total_word_count para corresponder à soma das contagens de palavras
+    UPDATE translationrequests
+    SET total_word_count = (
+        SELECT COALESCE(SUM((file->>'wordCount')::integer), 0)
+        FROM jsonb_array_elements(files) AS file
+    )
+    WHERE files IS NOT NULL AND jsonb_typeof(files) = 'array';
+    
+    -- Registrar no log quantos registros foram atualizados
+    RAISE NOTICE 'Migração concluída. Verifique os dados para garantir consistência.';
+END $$;
 
 -- Criar tabela para armazenar informações dos arquivos (opcional - abordagem alternativa)
 -- Se preferir usar uma tabela separada em vez de um campo JSONB

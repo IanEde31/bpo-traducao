@@ -19,6 +19,13 @@ import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/ui/page-header";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+interface FileInfo {
+  originalName: string;
+  storagePath: string;
+  fileType: string;
+  wordCount: number;
+}
+
 interface Quote {
   request_id: string;
   created_at: string;
@@ -27,17 +34,21 @@ interface Quote {
   source_language: string;
   target_language: string;
   translation_subtype: string | null;
-  customer_name: string;
-  customer_email: string;
-  customer_phone: string;
-  file_name: string;
-  file_size: number;
-  file_path: string;
-  word_count: number;
+  name: string;
+  email: string;
+  phone: string;
+  files?: FileInfo[];
+  file_count: number;
+  total_word_count: number;
   price_per_word: number;
   total_price: number;
   delivery_date: string;
   user_id: string;
+  // Campos legados para compatibilidade
+  file_name?: string;
+  file_size?: number;
+  file_path?: string;
+  word_count?: number;
 }
 
 const STATUS_COLORS = {
@@ -60,6 +71,7 @@ export default function MyQuotes() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showPreview, setShowPreview] = useState(false);
   const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const { isAuthenticated } = useContext(UserTypeContext);
   const navigate = useNavigate();
@@ -110,7 +122,7 @@ export default function MyQuotes() {
     setExpandedQuote(expandedQuote === quoteId ? null : quoteId);
   };
 
-  const handlePreviewClick = async (fileUrl: string) => {
+  const handlePreviewClick = async (fileUrl: string, fileName: string) => {
     try {
       setIsLoading(true);
       const { data } = await supabase.storage
@@ -119,6 +131,7 @@ export default function MyQuotes() {
 
       if (data?.signedUrl) {
         setSelectedFileUrl(data.signedUrl);
+        setSelectedFileName(fileName);
         setShowPreview(true);
       } else {
         toast({
@@ -227,22 +240,48 @@ export default function MyQuotes() {
                     </div>
 
                     <div>
-                      <h3 className="font-medium mb-2">Arquivo</h3>
-                      <div className="flex items-center justify-between bg-gray-50 p-3 rounded">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{quote.file_name}</p>
-                          <p className="text-xs text-gray-500">
-                            {Math.round(quote.file_size / 1024)} KB
-                          </p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handlePreviewClick(quote.file_path)}
-                          className="flex-shrink-0"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                      <h3 className="font-medium mb-2">Arquivos</h3>
+                      <div className="space-y-2">
+                        {quote.files && quote.files.length > 0 ? (
+                          quote.files.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate">{file.originalName}</p>
+                                <p className="text-xs text-gray-500">
+                                  {file.wordCount} palavras
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handlePreviewClick(file.storagePath, file.originalName)}
+                                className="flex-shrink-0"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))
+                        ) : quote.file_path ? (
+                          // Compatibilidade com formato antigo
+                          <div className="flex items-center justify-between bg-gray-50 p-3 rounded">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm truncate">{quote.file_name}</p>
+                              <p className="text-xs text-gray-500">
+                                {quote.word_count} palavras ({Math.round((quote.file_size || 0) / 1024)} KB)
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handlePreviewClick(quote.file_path, quote.file_name || 'Arquivo')}
+                              className="flex-shrink-0"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">Nenhum arquivo disponível</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -251,9 +290,9 @@ export default function MyQuotes() {
                     <div>
                       <h3 className="font-medium mb-2">Detalhes do cliente</h3>
                       <div className="space-y-1 text-sm text-gray-600">
-                        <p>{quote.customer_name}</p>
-                        <p>{quote.customer_email}</p>
-                        <p>{quote.customer_phone}</p>
+                        <p>{quote.name}</p>
+                        <p>{quote.email}</p>
+                        <p>{quote.phone}</p>
                       </div>
                     </div>
 
@@ -262,7 +301,7 @@ export default function MyQuotes() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-gray-600">Quantidade de palavras:</span>
-                          <span>{quote.word_count}</span>
+                          <span>{quote.total_word_count || quote.word_count || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Preço por palavra:</span>
@@ -285,14 +324,14 @@ export default function MyQuotes() {
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-4xl w-full">
           <DialogHeader>
-            <DialogTitle>Visualização do arquivo</DialogTitle>
+            <DialogTitle>Visualização do arquivo: {selectedFileName}</DialogTitle>
           </DialogHeader>
           <ScrollArea className="h-[60vh]">
             {selectedFileUrl && (
               <iframe
                 src={selectedFileUrl}
                 className="w-full h-full"
-                title="Visualização do arquivo"
+                title={`Visualização do arquivo: ${selectedFileName}`}
               />
             )}
           </ScrollArea>

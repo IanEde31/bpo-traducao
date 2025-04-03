@@ -13,15 +13,24 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+// Tipo para armazenar informações de arquivo
+interface FileInfo {
+  originalName: string;
+  storagePath: string;
+  fileType: string;
+  wordCount: number;
+}
+
 // Tipo para armazenar os detalhes da tradução
 interface TranslationDetails {
   id: string;
   request_id: string;
-  file_name: string;
-  file_path: string;
+  file_name?: string; // Campo legado
+  file_path?: string; // Campo legado
   source_language: string;
   target_language: string;
-  word_count: number;
+  word_count?: number; // Campo legado
+  total_word_count?: number; // Novo campo
   price_per_word: number;
   total_price: number;
   status: string;
@@ -32,7 +41,9 @@ interface TranslationDetails {
   content?: string;
   translated_content?: string;
   service_type?: string;
-  translated_file_path?: string; 
+  translated_file_path?: string;
+  files?: FileInfo[]; // Novo campo para múltiplos arquivos
+  file_count?: number; // Novo campo
 }
 
 export function TranslatorWorkspace() {
@@ -47,6 +58,10 @@ export function TranslatorWorkspace() {
   const [translatedContent, setTranslatedContent] = useState("");
   const [autosaveMessage, setAutosaveMessage] = useState("");
   const [translateStatus, setTranslateStatus] = useState("");
+  // Estados para controle de múltiplos arquivos
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [currentFileName, setCurrentFileName] = useState("");
+  const [filesUrls, setFilesUrls] = useState<{[key: string]: string}>({});
   const { toast } = useToast();
   const navigate = useNavigate();
   const contentRef = useRef<HTMLTextAreaElement>(null);
@@ -75,8 +90,43 @@ export function TranslatorWorkspace() {
         
         setTranslation(data);
 
-        // Buscar o arquivo para pré-visualização
-        if (data.file_path) {
+        // Verificar se temos múltiplos arquivos (novo formato) ou um único arquivo (formato legado)
+        if (data.files && data.files.length > 0) {
+          console.log("Formato novo detectado com múltiplos arquivos:", data.files.length);
+          
+          // Criar URLs assinadas para todos os arquivos
+          const urlsObj: {[key: string]: string} = {};
+          
+          // Processar o primeiro arquivo inicialmente
+          const firstFile = data.files[0];
+          setCurrentFileName(firstFile.originalName);
+          
+          // Criar URLs assinadas para todos os arquivos
+          await Promise.all(data.files.map(async (file: FileInfo, index: number) => {
+            try {
+              const { data: fileData, error: fileError } = await supabase.storage
+                .from("arquivos_carregados")
+                .createSignedUrl(file.storagePath, 3600);
+
+              if (fileError) throw fileError;
+              urlsObj[file.storagePath] = fileData.signedUrl;
+              
+              // Se for o primeiro arquivo, carregar seu conteúdo
+              if (index === 0) {
+                setFileUrl(fileData.signedUrl);
+                await loadFileContent(file.storagePath, file.originalName);
+              }
+            } catch (e) {
+              console.error(`Erro ao processar arquivo ${file.originalName}:`, e);
+            }
+          }));
+          
+          setFilesUrls(urlsObj);
+        } else if (data.file_path) {
+          // Formato legado com um único arquivo
+          console.log("Formato legado detectado com um único arquivo");
+          setCurrentFileName(data.file_name || "Arquivo");
+          
           const { data: fileData, error: fileError } = await supabase.storage
             .from("arquivos_carregados")
             .createSignedUrl(data.file_path, 3600);
@@ -193,17 +243,80 @@ export function TranslatorWorkspace() {
     fetchTranslationDetails();
   }, [requestId, toast]);
 
+  // Função para alternar entre arquivos
+  const changeCurrentFile = async (index: number) => {
+    if (!translation || !translation.files || index >= translation.files.length) return;
+    
+    try {
+      setCurrentFileIndex(index);
+      const file = translation.files[index];
+      
+      // Verificar se o arquivo tem as propriedades necessárias
+      if (!file || !file.storagePath) {
+        console.error("Arquivo inválido ou sem caminho de armazenamento");
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Informações do arquivo incompletas ou inválidas.",
+        });
+        return;
+      }
+      
+      // Definir o nome do arquivo com fallback seguro
+      setCurrentFileName(file.originalName || 'Arquivo sem nome');
+      
+      // Verificar se já temos a URL do arquivo
+      if (filesUrls[file.storagePath]) {
+        setFileUrl(filesUrls[file.storagePath]);
+      } else {
+        // Criar URL assinada para o arquivo
+        const { data: fileData, error: fileError } = await supabase.storage
+          .from("arquivos_carregados")
+          .createSignedUrl(file.storagePath, 3600);
+
+        if (fileError) throw fileError;
+        
+        // Atualizar o objeto de URLs
+        setFilesUrls(prev => ({
+          ...prev,
+          [file.storagePath]: fileData.signedUrl
+        }));
+        
+        setFileUrl(fileData.signedUrl);
+      }
+      
+      // Carregar conteúdo do arquivo
+      await loadFileContent(file.storagePath, file.originalName || 'Arquivo sem nome');
+      
+    } catch (error) {
+      console.error("Erro ao alternar entre arquivos:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Não foi possível carregar o arquivo selecionado.",
+      });
+    }
+  };
+
   // Função para carregar o conteúdo do arquivo
   async function loadFileContent(filePath: string, fileName: string) {
     try {
+      // Verificar se temos um caminho de arquivo válido
+      if (!filePath) {
+        console.log("Caminho do arquivo não fornecido");
+        setContent(""); // Limpar conteúdo anterior
+        return;
+      }
+      
       // Verificar se é um tipo de arquivo de texto
       const textFileExtensions = [".txt", ".md", ".html", ".xml", ".json", ".csv"];
-      const hasTextExtension = textFileExtensions.some(ext => 
+      const hasTextExtension = fileName && textFileExtensions.some(ext => 
         fileName.toLowerCase().endsWith(ext)
       );
 
       if (!hasTextExtension) {
         console.log("Arquivo não é do tipo texto, apenas visualização disponível");
+        setContent(""); // Limpar conteúdo anterior
         return;
       }
 
@@ -212,11 +325,18 @@ export function TranslatorWorkspace() {
         .download(filePath);
 
       if (fileError) throw fileError;
+      
+      if (!fileData) {
+        console.log("Nenhum dado retornado para o arquivo");
+        setContent("");
+        return;
+      }
 
       const text = await fileData.text();
       setContent(text);
     } catch (error) {
       console.error("Erro ao carregar conteúdo do arquivo:", error);
+      setContent(""); // Limpar conteúdo em caso de erro
     }
   }
 
@@ -298,10 +418,23 @@ export function TranslatorWorkspace() {
       console.log(`Preparando tradução: ${sourceLang} -> ${targetLang}`);
       console.log(`ID da requisição: ${translation.request_id}`);
 
+      // Verificar se temos um caminho de arquivo válido
+      if (!translation.file_path && (!translation.files || translation.files.length === 0)) {
+        throw new Error("Não foi possível encontrar o arquivo para tradução");
+      }
+
+      // Determinar o caminho do arquivo a ser usado
+      const filePath = translation.file_path || 
+        (translation.files && translation.files.length > 0 ? translation.files[currentFileIndex].storagePath : null);
+
+      if (!filePath) {
+        throw new Error("Caminho do arquivo inválido");
+      }
+
       // Download do arquivo original
       const { data: fileData, error: fileError } = await supabase.storage
         .from("arquivos_carregados")
-        .download(translation.file_path);
+        .download(filePath);
 
       if (fileError) {
         throw new Error(`Erro ao baixar arquivo original: ${fileError.message}`);
@@ -607,10 +740,12 @@ export function TranslatorWorkspace() {
           <Card className="p-4">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
-                <h2 className="text-xl font-semibold">{translation.file_name}</h2>
+                <h2 className="text-xl font-semibold">{currentFileName}</h2>
                 <p className="text-sm text-gray-500">
                   {translation.source_language} para {translation.target_language} • 
-                  {translation.word_count} palavras • 
+                  {translation.files ? 
+                    `${translation.total_word_count || 0} palavras totais` : 
+                    `${translation.word_count || 0} palavras`} • 
                   Prazo: {new Date(translation.delivery_date).toLocaleDateString()}
                 </p>
               </div>
@@ -637,6 +772,28 @@ export function TranslatorWorkspace() {
             {/* Documento Original */}
             <Card className="p-4">
               <h3 className="text-lg font-medium mb-2">Documento do cliente</h3>
+              
+              {/* Seletor de arquivos - mostrar apenas se houver múltiplos arquivos */}
+              {translation.files && translation.files.length > 1 && (
+                <div className="mb-4">
+                  <label htmlFor="file-selector" className="block text-sm font-medium mb-1">Selecionar arquivo:</label>
+                  <select 
+                    id="file-selector"
+                    className="w-full p-2 border rounded-md bg-background"
+                    value={currentFileIndex}
+                    onChange={(e) => {
+                      const newIndex = parseInt(e.target.value);
+                      changeCurrentFile(newIndex);
+                    }}
+                  >
+                    {translation.files.map((file, index) => (
+                      <option key={index} value={index}>
+                        {file.originalName} ({file.wordCount} palavras)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               
               <Tabs defaultValue="preview">
                 <TabsList className="mb-2">
