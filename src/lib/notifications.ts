@@ -1,3 +1,4 @@
+
 import { supabase } from './supabase';
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
@@ -111,7 +112,7 @@ export async function fetchUserNotifications(userId: string, limit = 10, onlyUnr
 
     if (error) throw error;
     
-    return { success: true, notifications: data };
+    return { success: true, notifications: data || [] };
   } catch (error) {
     console.error('Erro ao buscar notificações do usuário:', error);
     return { success: false, error };

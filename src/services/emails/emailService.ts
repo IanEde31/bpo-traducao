@@ -1,4 +1,5 @@
-import { supabase } from "../../supabaseClient";
+
+import { supabase } from "@/lib/supabase";
 import { EmailTemplates } from "./templates";
 
 export class EmailService {

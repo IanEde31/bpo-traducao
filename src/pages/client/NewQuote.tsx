@@ -171,7 +171,6 @@ const NewQuote: React.FC = () => {
     processed: 0,
     isProcessing: false
   });
-  // Estado para controlar o modal de sucesso
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [submittedRequestId, setSubmittedRequestId] = useState<string | null>(null);
   const [submittedOrderData, setSubmittedOrderData] = useState<OrderData | null>(null);
@@ -437,15 +436,25 @@ const NewQuote: React.FC = () => {
           const fileExt = originalFileName.substring(originalFileName.lastIndexOf('.'));
           const safeFileName = `${fileNameWithoutExt}_${timestamp}${fileExt}`.replace(/[^a-zA-Z0-9.-_]/g, '_');
 
+          // Create a custom upload function to track progress
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('arquivos_carregados')
             .upload(safeFileName, fileInfo.file, {
               cacheControl: '3600',
+<<<<<<< HEAD
               upsert: false
             });
 
           // Atualizar o progresso manualmente após o upload
           setUploadProgress(prev => ({ ...prev, [safeFileName]: 100 }));
+=======
+              upsert: false,
+            });
+
+          // Update progress manually after upload completes
+          setUploadProgress(prev => ({ ...prev, [safeFileName]: 100 }));
+
+>>>>>>> fc1cd9554ab071cb4a1fff8033477a29ac6ca9d1
           if (uploadError) {
             throw new Error(`Erro ao fazer upload do arquivo ${originalFileName}`);
           }
