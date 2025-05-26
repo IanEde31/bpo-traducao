@@ -130,14 +130,6 @@ A aplicação está configurada para deploy em plataformas como Vercel ou Netlif
 - [ ] Sistema de verificação e certificação avançado
 - [ ] Análise de sentimento e contexto para traduções mais precisas
 
-## 👥 Contribuição
 
-Contribuições são bem-vindas! Por favor, leia nossas diretrizes de contribuição antes de submeter pull requests.
 
-## 📄 Licença
-
-Este projeto está licenciado sob a Licença MIT - veja o arquivo LICENSE para detalhes.
-
----
-
-Desenvolvido com ❤️ por Ian Ede | BPO Tradução © 2025
+Desenvolvido Ian Ede 
